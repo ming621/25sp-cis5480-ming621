@@ -20,7 +20,7 @@ void handle_sigalrm(int signo) {
 void handle_sigint(int signo) {
   (void)signo;
   //dprintf(STDERR_FILENO, "[SIGINT HANDLER] current_child = %d\n",
-          current_child);
+          //current_child);
   if (current_child == 0) {
     //printf(STDERR_FILENO, "[SIGINT HANDLER] No child -> newline\n");
     write(STDERR_FILENO, "\n", 1);
