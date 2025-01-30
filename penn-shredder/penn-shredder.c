@@ -15,26 +15,18 @@ static int timeout = 0;
 void handle_sigalrm(int signo) {
   (void)signo;
   alarm_flag = 1;
+  kill(current_child, SIGKILL);
 }
 
 void handle_sigint(int signo) {
   (void)signo;
-  //dprintf(STDERR_FILENO, "[SIGINT HANDLER] current_child = %d\n",
-          //current_child);
   if (current_child == 0) {
-    //printf(STDERR_FILENO, "[SIGINT HANDLER] No child -> newline\n");
     write(STDERR_FILENO, "\n", 1);
   } else {
-    if (kill(-current_child, SIGINT) == -1) {
-      perror("[SIGINT HANDLER] kill failed");
-    }
+    kill(current_child, SIGINT);
   }
 }
 
-void handle_sigusr1(int signo) {
-  (void)signo;
-  // Do nothing, just a signal to synchronize
-}
 
 // Trim whitespace from the command
 static size_t trim(char* buffer) {
@@ -94,36 +86,7 @@ int main(int argc, char* argv[], char* envp[]) {
     timeout = atoi(argv[1]);
   }
 
-  // Set up signal handlers
-  struct sigaction sa;
-  memset(&sa, 0, sizeof(sa));
-  sa.sa_handler = handle_sigalrm;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESTART;
-  if (sigaction(SIGALRM, &sa, NULL) == -1) {
-    perror("SIGALRM error");
-    exit(EXIT_FAILURE);
-  }
-
-  struct sigaction sa1;
-  memset(&sa1, 0, sizeof(sa1));
-  sa1.sa_handler = handle_sigint;
-  sigemptyset(&sa1.sa_mask);
-  sa1.sa_flags = 0;
-  if (sigaction(SIGINT, &sa1, NULL) == -1) {
-    perror("SIGINT error");
-    exit(EXIT_FAILURE);
-  }
-
-  struct sigaction sa2;
-  memset(&sa2, 0, sizeof(sa2));
-  sa2.sa_handler = handle_sigusr1;
-  sigemptyset(&sa2.sa_mask);
-  sa2.sa_flags = 0;
-  if (sigaction(SIGUSR1, &sa2, NULL) == -1) {
-    perror("SIGUSR1 error");
-    exit(EXIT_FAILURE);
-  }
+  
 
   const int max_line_length = 4096;
   char cmd[max_line_length];
@@ -173,15 +136,6 @@ int main(int argc, char* argv[], char* envp[]) {
 
     if (pid == 0) {
 
-      if (setpgid(0, 0) == -1) {
-        perror("[CHILD] setpgid failed");
-      } else {
-        //fprintf(stderr, "[CHILD] setpgid succeeded, PGID=%d\n", getpgid(0));
-      }
-
-      // Notify parent that setpgid is done
-      kill(getppid(), SIGUSR1);
-
       struct sigaction dfl;
       memset(&dfl, 0, sizeof(dfl));
       dfl.sa_handler = SIG_DFL;
@@ -194,25 +148,27 @@ int main(int argc, char* argv[], char* envp[]) {
     }
 
     if (pid > 0) {
-
-      // Wait for child to complete setpgid
-      sigset_t mask;
-      sigemptyset(&mask);
-      sigsuspend(&mask);
-
-      if (setpgid(pid, pid) == -1) {
-        perror("[PARENT] setpgid failed");
-      } else {
-        //fprintf(stderr, "[PARENT] setpgid succeeded, child's PGID=%d\n",
-                //getpgid(pid));
+      //set the sig_handler
+      current_child = pid;
+      // Set up signal handlers
+      struct sigaction sa;
+      memset(&sa, 0, sizeof(sa));
+      sa.sa_handler = handle_sigalrm;
+      sigemptyset(&sa.sa_mask);
+      sa.sa_flags = 0;
+      if (sigaction(SIGALRM, &sa, NULL) == -1) {
+        perror("SIGALRM error");
+        exit(EXIT_FAILURE);
       }
 
-      pid_t child_pgid = getpgid(pid);
-      if (tcsetpgrp(STDIN_FILENO, child_pgid) == -1) {
-        perror("[PARENT] tcsetpgrp failed");
-      } else {
-        //fprintf(stderr, "[PARENT] Terminal foreground PGID set to %d\n",
-                //child_pgid);
+      struct sigaction sa1;
+      memset(&sa1, 0, sizeof(sa1));
+      sa1.sa_handler = handle_sigint;
+      sigemptyset(&sa1.sa_mask);
+      sa1.sa_flags = 0;
+      if (sigaction(SIGINT, &sa1, NULL) == -1) {
+        perror("SIGINT error");
+        exit(EXIT_FAILURE);
       }
 
       if (timeout > 0) {
@@ -222,36 +178,11 @@ int main(int argc, char* argv[], char* envp[]) {
       }
 
       int status;
-      pid_t w;
-      do {
-        w = waitpid(pid, &status, 0);
-      } while (w < 0 && errno == EINTR);
-
-      if (w == -1) {
-        perror("waitpid error");
-        exit(EXIT_FAILURE);
-      } else {
-        if (alarm_flag) {
-          kill(pid, SIGKILL);
-          write(STDERR_FILENO, CATCHPHRASE, strlen(CATCHPHRASE));
-          waitpid(pid, NULL, 0);
-        }
+      waitpid(pid, &status, 0);
+      
+      if(alarm_flag){
+        write(STDERR_FILENO, CATCHPHRASE, strlen(CATCHPHRASE));
       }
-
-      pid_t parent_pgid = getpgrp();
-      struct sigaction ignore, old;
-      memset(&ignore, 0, sizeof(ignore));
-      ignore.sa_handler = SIG_IGN;
-      sigemptyset(&ignore.sa_mask);
-      sigaction(SIGTTOU, &ignore, &old);
-      if (tcsetpgrp(STDIN_FILENO, parent_pgid) == -1) {
-        perror("[PARENT] tcsetpgrp (restore) failed");
-      } else {
-        //fprintf(stderr, "[PARENT] Terminal foreground PGID restored to %d\n",
-                //parent_pgid);
-      }
-
-      sigaction(SIGTTOU, &old, NULL);
 
       alarm(0);
       current_child = 0;
