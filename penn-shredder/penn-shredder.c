@@ -162,8 +162,13 @@ void runCommand(char* cmd, char* envp[]) {
   int argc_child = 0;
   char* cmd1 = strdup(cmd);
   char** argv1 = parse(cmd1, &argc_child);
-  if (argv1 == NULL || argc_child == 0) {
+  if (!argv1) {  
     fprintf(stderr, "Invalid command input\n");
+    free(cmd1); 
+    return;
+  }
+
+  if (argc_child == 0) {
     free(cmd1);
     free(argv1);
     return;
