@@ -134,7 +134,7 @@ bool readCommandLine(char* cmdBuffer, size_t buffer_size) {
 void setupParentSignals(void) {
   // Set up signal handlers
   struct sigaction alarm_action;
-  // memset(&alarm_action, 0, sizeof(alarm_action));
+  memset(&alarm_action, 0, sizeof(alarm_action));
   alarm_action.sa_handler = handle_sigalrm;
   sigemptyset(&alarm_action.sa_mask);
   alarm_action.sa_flags = 0;
@@ -144,7 +144,7 @@ void setupParentSignals(void) {
   }
 
   struct sigaction signal_action;
-  // memset(&signal_action, 0, sizeof(signal_action));
+  memset(&signal_action, 0, sizeof(signal_action));
   signal_action.sa_handler = handle_sigint;
   sigemptyset(&signal_action.sa_mask);
   signal_action.sa_flags = 0;
@@ -185,7 +185,7 @@ void runCommand(char* cmd, char* envp[]) {
   // if child process
   if (pid == 0) {
     struct sigaction dfl;
-    // memset(&dfl, 0, sizeof(dfl));
+    memset(&dfl, 0, sizeof(dfl));
     dfl.sa_handler = SIG_DFL;
     sigemptyset(&dfl.sa_mask);
     sigaction(SIGINT, &dfl, NULL);
