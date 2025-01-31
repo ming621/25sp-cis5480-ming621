@@ -1,3 +1,4 @@
+#include "penn-shredder.h"
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
@@ -8,10 +9,16 @@
 #include <termios.h>
 #include <unistd.h>
 
-static volatile pid_t current_child = 0;
-static volatile sig_atomic_t alarm_flag = 0;
-static int timeout = 0;
+#define CATCHPHRASE "Bwahaha ... Tonight, I dine on turtle soup!\n"
 
+// Global Variables
+static volatile pid_t current_child = 0; //current child pid for parent process
+static volatile sig_atomic_t alarm_flag = 0; //track if the alarm happened
+static int timeout = 0; //timeout settings
+
+// ===========================================================
+// Signal Handlers
+// ===========================================================
 void handle_sigalrm(int signo) {
   (void)signo;
   alarm_flag = 1;
@@ -27,8 +34,9 @@ void handle_sigint(int signo) {
   }
 }
 
-
-// Trim whitespace from the command
+// ===========================================================
+// Trim leading and trailing whitespace
+// ===========================================================
 static size_t trim(char* buffer) {
   char* temp = buffer;
   while (*temp == ' ' || *temp == '\t' || *temp == '\n') {
@@ -43,13 +51,24 @@ static size_t trim(char* buffer) {
   *end = '\0';
   size_t len = end - temp;
   if (temp != buffer) {
-    memmove(buffer, temp, len + 1);
+    size_t idx = 0;
+    while (temp[idx] != '\0') {
+      buffer[idx] = temp[idx];
+      idx++;
+    }
+    buffer[idx] = '\0';
   }
   return len;
 }
 
-// Parse the command into arguments
+// ===========================================================
+// Parse a command to array
+// ===========================================================
 static char** parse(char* cmd, int* argc) {
+  if(cmd == NULL || argc == NULL){
+    return NULL;
+  }
+
   int count = 0;
   char* temp = strdup(cmd);
   char* token = strtok(temp, " \t");
@@ -60,16 +79,21 @@ static char** parse(char* cmd, int* argc) {
   }
   free(temp);
 
+  if(count == 0){
+    *argc = 0;
+    return NULL;
+  }
+
   char** argv = malloc((count + 1) * sizeof(char*));
   if (!argv) {
     perror("malloc failed");
     exit(EXIT_FAILURE);
   }
 
-  int i = 0;
+  int idx = 0;
   token = strtok(cmd, " \t");
   while (token != NULL) {
-    argv[i++] = token;
+    argv[idx++] = token;
     token = strtok(NULL, " \t");
   }
   argv[count] = NULL;
@@ -77,118 +101,152 @@ static char** parse(char* cmd, int* argc) {
   return argv;
 }
 
+// ===========================================================
+// Read Command Line from standard input
+// ===========================================================
+bool readCommandLine(char* cmdBuffer, size_t buffer_size) {
+  if (write(STDERR_FILENO, "penn-shredder# ", strlen("penn-shredder# ")) < 0) {
+    perror("write failed");
+    return false;
+  }
+
+  size_t numBytes = read(STDIN_FILENO, cmdBuffer, buffer_size - 1);
+  if (numBytes == -1) {
+    if (errno == EINTR) {
+      cmdBuffer[0] = '\0';
+      return true;
+    }
+    perror("read failed");
+    return false;
+  }
+
+  if (numBytes == 0) {
+    return false;
+  }
+
+  cmdBuffer[numBytes] = '\0';
+  return true;
+}
+
+// ===========================================================
+// use sigaction to setup signal handlers for parent
+// ===========================================================
+void setupParentSignals(void) {
+  // Set up signal handlers
+  struct sigaction alarm_action;
+  // memset(&alarm_action, 0, sizeof(alarm_action));
+  alarm_action.sa_handler = handle_sigalrm;
+  sigemptyset(&alarm_action.sa_mask);
+  alarm_action.sa_flags = 0;
+  if (sigaction(SIGALRM, &alarm_action, NULL) == -1) {
+    perror("SIGALRM error");
+    exit(EXIT_FAILURE);
+  }
+
+  struct sigaction signal_action;
+  // memset(&signal_action, 0, sizeof(signal_action));
+  signal_action.sa_handler = handle_sigint;
+  sigemptyset(&signal_action.sa_mask);
+  signal_action.sa_flags = 0;
+  if (sigaction(SIGINT, &signal_action, NULL) == -1) {
+    perror("SIGINT error");
+    exit(EXIT_FAILURE);
+  }
+}
+
+// ===========================================================
+// parse and execute the command by forking a child process 
+// to execute and wait for it to terminate
+// ===========================================================
+void runCommand(char* cmd, char* envp[]) {
+  int argc_child = 0;
+  char* cmd1 = strdup(cmd);
+  char** argv1 = parse(cmd1, &argc_child);
+  if (argv1 == NULL || argc_child == 0) {
+    fprintf(stderr, "Invalid command input\n");
+    free(cmd1);
+    free(argv1);
+    return;
+  }
+
+  alarm_flag = 0;
+  pid_t pid = fork();
+  if (pid < 0) {
+    perror("fork failed");
+    free(cmd1);
+    free(argv1);
+    exit(EXIT_FAILURE);
+  }
+  // if child process
+  if (pid == 0) {
+    struct sigaction dfl;
+    // memset(&dfl, 0, sizeof(dfl));
+    dfl.sa_handler = SIG_DFL;
+    sigemptyset(&dfl.sa_mask);
+    sigaction(SIGINT, &dfl, NULL);
+
+    execve(argv1[0], argv1, envp);
+    perror("execve failed");
+    exit(EXIT_FAILURE);
+  }
+  // if parent process
+  if (pid > 0) {
+    // set the sig_handler
+    current_child = pid;
+    setupParentSignals();
+
+    if (timeout > 0) {
+      alarm(timeout);
+    } else {
+      alarm(0);
+    }
+
+    int status;
+    waitpid(pid, &status, 0);
+
+    if (alarm_flag) {
+      write(STDERR_FILENO, CATCHPHRASE, strlen(CATCHPHRASE));
+    }
+
+    alarm(0);
+    current_child = 0;
+    free(cmd1);
+    free(argv1);
+  }
+}
+
+// ===========================================================
+// Main
+// ===========================================================
 int main(int argc, char* argv[], char* envp[]) {
   if (argc > 2) {
     fprintf(stderr, "should not pass more than 2 arguments");
     return EXIT_FAILURE;
   }
   if (argc == 2) {
-    timeout = atoi(argv[1]);
+    char* end;
+    long timeout_long = strtol(argv[1], &end, 10);
+    if(*end != '\0' || timeout_long < 0){
+      fprintf(stderr, "Invalid timeout");
+      exit(EXIT_FAILURE);
+    }
+    timeout = (int)timeout_long;
   }
-
-  
 
   const int max_line_length = 4096;
   char cmd[max_line_length];
   while (true) {
-    if (write(STDERR_FILENO, "penn-shredder# ", strlen("penn-shredder# ")) <
-        0) {
-      perror("write failed");
-      exit(EXIT_FAILURE);
-    }
-
-    memset(&cmd, 0, sizeof(cmd));
-    size_t numBytes = read(STDIN_FILENO, cmd, max_line_length - 1);
-    if (numBytes == -1) {
-      if (errno == EINTR) {
-        continue;
-      }
-      perror("read failed");
-      exit(EXIT_FAILURE);
-    }
-
-    if (numBytes == 0) {
+    // 1. read user input
+    if (!readCommandLine(cmd, max_line_length)) {
       break;
     }
-
+    // 2.trim whitespace
     size_t len = trim(cmd);
     if (len == 0) {
       continue;
     }
-
-    int argc1 = 0;
-    char* cmd1 = strdup(cmd);
-    char** argv1 = parse(cmd1, &argc1);
-    if (argc1 == 0) {
-      free(cmd1);
-      free(argv1);
-      continue;
-    }
-
-    alarm_flag = 0;
-    pid_t pid = fork();
-    if (pid < 0) {
-      perror("fork failed");
-      free(cmd1);
-      free(argv1);
-      exit(EXIT_FAILURE);
-    }
-
-    if (pid == 0) {
-
-      struct sigaction dfl;
-      memset(&dfl, 0, sizeof(dfl));
-      dfl.sa_handler = SIG_DFL;
-      sigemptyset(&dfl.sa_mask);
-      sigaction(SIGINT, &dfl, NULL);
-
-      execve(argv1[0], argv1, envp);
-      perror("execve failed");
-      exit(EXIT_FAILURE);
-    }
-
-    if (pid > 0) {
-      //set the sig_handler
-      current_child = pid;
-      // Set up signal handlers
-      struct sigaction sa;
-      memset(&sa, 0, sizeof(sa));
-      sa.sa_handler = handle_sigalrm;
-      sigemptyset(&sa.sa_mask);
-      sa.sa_flags = 0;
-      if (sigaction(SIGALRM, &sa, NULL) == -1) {
-        perror("SIGALRM error");
-        exit(EXIT_FAILURE);
-      }
-
-      struct sigaction sa1;
-      memset(&sa1, 0, sizeof(sa1));
-      sa1.sa_handler = handle_sigint;
-      sigemptyset(&sa1.sa_mask);
-      sa1.sa_flags = 0;
-      if (sigaction(SIGINT, &sa1, NULL) == -1) {
-        perror("SIGINT error");
-        exit(EXIT_FAILURE);
-      }
-
-      if (timeout > 0) {
-        alarm(timeout);
-      } else {
-        alarm(0);
-      }
-
-      int status;
-      waitpid(pid, &status, 0);
-      
-      if(alarm_flag){
-        write(STDERR_FILENO, CATCHPHRASE, strlen(CATCHPHRASE));
-      }
-
-      alarm(0);
-      current_child = 0;
-      free(cmd1);
-      free(argv1);
-    }
+    // 3. run command (do fork things)
+    runCommand(cmd, envp);
   }
   return EXIT_SUCCESS;
 }
