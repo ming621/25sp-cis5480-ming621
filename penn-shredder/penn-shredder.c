@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #define CATCHPHRASE "Bwahaha ... Tonight, I dine on turtle soup!\n"
+#define MAX_TOKENS 1024
 
 // Global Variables
 static volatile pid_t current_child = 0; //current child pid for parent process
@@ -65,41 +66,47 @@ static size_t trim(char* buffer) {
 // Parse a command to array
 // ===========================================================
 static char** parse(char* cmd, int* argc) {
-  if(cmd == NULL || argc == NULL){
+  if (cmd == NULL || argc == NULL) {
     return NULL;
   }
 
+  // parse token and count token in one pass
+  char* tokens[MAX_TOKENS];
   int count = 0;
-  char* temp = strdup(cmd);
-  char* token = strtok(temp, " \t");
 
+  char* token = strtok(cmd, " \t");
   while (token != NULL) {
+    tokens[count] = token;
     count++;
     token = strtok(NULL, " \t");
-  }
-  free(temp);
 
-  if(count == 0){
+    if (count >= (MAX_TOKENS -1) ) {
+      break;
+    }
+  }
+
+  // If no tokens found, return NULL
+  if (count == 0) {
     *argc = 0;
     return NULL;
   }
 
+  // Allocate the array
   char** argv = malloc((count + 1) * sizeof(char*));
   if (!argv) {
     perror("malloc failed");
     exit(EXIT_FAILURE);
   }
 
-  int idx = 0;
-  token = strtok(cmd, " \t");
-  while (token != NULL) {
-    argv[idx++] = token;
-    token = strtok(NULL, " \t");
+  for (int i = 0; i < count; i++) {
+    argv[i] = tokens[i];
   }
   argv[count] = NULL;
+
   *argc = count;
   return argv;
 }
+
 
 // ===========================================================
 // Read Command Line from standard input
@@ -133,8 +140,8 @@ bool readCommandLine(char* cmdBuffer, size_t buffer_size) {
 // ===========================================================
 void setupParentSignals(void) {
   // Set up signal handlers
-  struct sigaction alarm_action;
-  memset(&alarm_action, 0, sizeof(alarm_action));
+  struct sigaction alarm_action = {0};
+  //memset(&alarm_action, 0, sizeof(alarm_action));
   alarm_action.sa_handler = handle_sigalrm;
   sigemptyset(&alarm_action.sa_mask);
   alarm_action.sa_flags = 0;
@@ -143,8 +150,8 @@ void setupParentSignals(void) {
     exit(EXIT_FAILURE);
   }
 
-  struct sigaction signal_action;
-  memset(&signal_action, 0, sizeof(signal_action));
+  struct sigaction signal_action = {0};
+  //memset(&signal_action, 0, sizeof(signal_action));
   signal_action.sa_handler = handle_sigint;
   sigemptyset(&signal_action.sa_mask);
   signal_action.sa_flags = 0;
@@ -184,8 +191,8 @@ void runCommand(char* cmd, char* envp[]) {
   }
   // if child process
   if (pid == 0) {
-    struct sigaction dfl;
-    memset(&dfl, 0, sizeof(dfl));
+    struct sigaction dfl = {0};
+    //memset(&dfl, 0, sizeof(dfl));
     dfl.sa_handler = SIG_DFL;
     sigemptyset(&dfl.sa_mask);
     sigaction(SIGINT, &dfl, NULL);
