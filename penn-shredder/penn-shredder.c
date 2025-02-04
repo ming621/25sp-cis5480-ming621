@@ -224,7 +224,17 @@ void runCommand(char* cmd, char* envp[]) {
     }
 
     int status;
-    wait(&status);
+    while (1) {
+        pid_t wait_res = wait(&status);
+        if (wait_res >= 0){
+          break;
+        }
+        if (errno == EINTR){
+          continue;
+        }
+        perror("wait failed");
+        exit(EXIT_FAILURE);
+    }
 
     if (alarm_flag) {
       write(STDERR_FILENO, CATCHPHRASE, strlen(CATCHPHRASE));
