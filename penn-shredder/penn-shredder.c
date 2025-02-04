@@ -9,13 +9,11 @@
 #include <termios.h>
 #include <unistd.h>
 
-#define CATCHPHRASE "Bwahaha ... Tonight, I dine on turtle soup!\n"
-#define MAX_TOKENS 1024
-
 // Global Variables
-static volatile pid_t current_child = 0; //current child pid for parent process
-static volatile sig_atomic_t alarm_flag = 0; //track if the alarm happened
-static int timeout = 0; //timeout settings
+static volatile pid_t current_child = 0;  // current child pid for parent
+                                          // process
+static volatile sig_atomic_t alarm_flag = 0;  // track if the alarm happened
+static int timeout = 0;                       // timeout settings
 
 // ===========================================================
 // Signal Handlers
@@ -80,7 +78,7 @@ static char** parse(char* cmd, int* argc) {
     count++;
     token = strtok(NULL, " \t");
 
-    if (count >= (MAX_TOKENS -1) ) {
+    if (count >= (MAX_TOKENS - 1)) {
       break;
     }
   }
@@ -107,12 +105,11 @@ static char** parse(char* cmd, int* argc) {
   return argv;
 }
 
-
 // ===========================================================
 // Read Command Line from standard input
 // ===========================================================
 bool readCommandLine(char* cmdBuffer, size_t buffer_size) {
-  if (write(STDERR_FILENO, "penn-shredder# ", strlen("penn-shredder# ")) < 0) {
+  if (write(STDERR_FILENO, PROMPT, strlen(PROMPT)) < 0) {
     perror("write failed");
     return false;
   }
@@ -141,7 +138,6 @@ bool readCommandLine(char* cmdBuffer, size_t buffer_size) {
 void setupParentSignals(void) {
   // Set up signal handlers
   struct sigaction alarm_action = {0};
-  //memset(&alarm_action, 0, sizeof(alarm_action));
   alarm_action.sa_handler = handle_sigalrm;
   sigemptyset(&alarm_action.sa_mask);
   alarm_action.sa_flags = 0;
@@ -151,7 +147,6 @@ void setupParentSignals(void) {
   }
 
   struct sigaction signal_action = {0};
-  //memset(&signal_action, 0, sizeof(signal_action));
   signal_action.sa_handler = handle_sigint;
   sigemptyset(&signal_action.sa_mask);
   signal_action.sa_flags = 0;
@@ -162,21 +157,17 @@ void setupParentSignals(void) {
 }
 
 // ===========================================================
-// parse and execute the command by forking a child process 
+// parse and execute the command by forking a child process
 // to execute and wait for it to terminate
 // ===========================================================
 void runCommand(char* cmd, char* envp[]) {
   int argc_child = 0;
-  char* cmd1 = strdup(cmd);
-  char** argv1 = parse(cmd1, &argc_child);
-  if (!argv1) {  
-    fprintf(stderr, "Invalid command input\n");
-    free(cmd1); 
+  char** argv1 = parse(cmd, &argc_child);
+  if (!argv1) {
     return;
   }
 
   if (argc_child == 0) {
-    free(cmd1);
     free(argv1);
     return;
   }
@@ -185,14 +176,13 @@ void runCommand(char* cmd, char* envp[]) {
   pid_t pid = fork();
   if (pid < 0) {
     perror("fork failed");
-    free(cmd1);
     free(argv1);
     exit(EXIT_FAILURE);
   }
+
   // if child process
   if (pid == 0) {
     struct sigaction dfl = {0};
-    //memset(&dfl, 0, sizeof(dfl));
     dfl.sa_handler = SIG_DFL;
     sigemptyset(&dfl.sa_mask);
     sigaction(SIGINT, &dfl, NULL);
@@ -214,7 +204,7 @@ void runCommand(char* cmd, char* envp[]) {
     }
 
     int status;
-    waitpid(pid, &status, 0);
+    wait(&status);
 
     if (alarm_flag) {
       write(STDERR_FILENO, CATCHPHRASE, strlen(CATCHPHRASE));
@@ -222,7 +212,6 @@ void runCommand(char* cmd, char* envp[]) {
 
     alarm(0);
     current_child = 0;
-    free(cmd1);
     free(argv1);
   }
 }
@@ -232,14 +221,12 @@ void runCommand(char* cmd, char* envp[]) {
 // ===========================================================
 int main(int argc, char* argv[], char* envp[]) {
   if (argc > 2) {
-    fprintf(stderr, "should not pass more than 2 arguments");
     return EXIT_FAILURE;
   }
   if (argc == 2) {
     char* end;
     long timeout_long = strtol(argv[1], &end, 10);
-    if(*end != '\0' || timeout_long < 0){
-      fprintf(stderr, "Invalid timeout");
+    if (*end != '\0' || timeout_long < 0) {
       exit(EXIT_FAILURE);
     }
     timeout = (int)timeout_long;

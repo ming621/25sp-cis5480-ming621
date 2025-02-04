@@ -11,9 +11,13 @@
 #include <termios.h>
 #include <unistd.h>
 
+#define CATCHPHRASE "Bwahaha ... Tonight, I dine on turtle soup!\n"
+#define MAX_TOKENS 1024
+#define PROMPT "penn-shredder# "
+
 /*!
  * Handles the SIGALRM signal
- * This function sets the `alarm_flag` and terminates the currently 
+ * This function sets the `alarm_flag` and terminates the currently
  * running child process if timeout.
  *
  * @param signo     The signal number (SIGALRM).
@@ -53,7 +57,8 @@ static char** parse(char* cmd, int* argc);
  *
  * @param cmdBuffer    input buffer that stores command
  * @param buffer_size  The maximum size of the buffer
- * @returns true if a valid command was read, false if an error occurred or EOF was reached.
+ * @returns true if a valid command was read, false if an error occurred or EOF
+ * was reached.
  */
 bool readCommandLine(char* cmdBuffer, size_t buffer_size);
 
@@ -71,6 +76,5 @@ void setupParentSignals(void);
  * @param envp  The environment variables
  */
 void runCommand(char* cmd, char* envp[]);
-
 
 #endif
