@@ -34,6 +34,7 @@ void handle_sigalrm(int signo);
  */
 void handle_sigint(int signo);
 
+char* my_strdup(const char* s);
 /*!
  * Trims leading and trailing whitespace from a given buffer.
  *

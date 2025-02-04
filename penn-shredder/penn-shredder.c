@@ -10,8 +10,8 @@
 #include <unistd.h>
 
 // Global Variables
-static volatile pid_t current_child = 0;  // current child pid for parent
-                                          // process
+static volatile pid_t current_child = 0;      // current child pid for parent
+                                              // process
 static volatile sig_atomic_t alarm_flag = 0;  // track if the alarm happened
 static int timeout = 0;                       // timeout settings
 
@@ -31,6 +31,22 @@ void handle_sigint(int signo) {
   } else {
     kill(current_child, SIGINT);
   }
+}
+
+// ===========================================================
+// strdup helper function
+// ===========================================================
+char* my_strdup(const char* str) {
+  size_t len = strlen(str);
+  char* res = malloc(len + 1);
+  if (!res) {
+    perror("malloc failed");
+    exit(EXIT_FAILURE);
+  }
+  for (size_t idx = 0; idx <= len; idx++) {
+    res[idx] = str[idx];
+  }
+  return res;
 }
 
 // ===========================================================
@@ -162,12 +178,15 @@ void setupParentSignals(void) {
 // ===========================================================
 void runCommand(char* cmd, char* envp[]) {
   int argc_child = 0;
+  char* cmd_copy = my_strdup(cmd);
   char** argv1 = parse(cmd, &argc_child);
   if (!argv1) {
+    free(cmd_copy);
     return;
   }
 
   if (argc_child == 0) {
+    free(cmd_copy);
     free(argv1);
     return;
   }
@@ -176,6 +195,7 @@ void runCommand(char* cmd, char* envp[]) {
   pid_t pid = fork();
   if (pid < 0) {
     perror("fork failed");
+    free(cmd_copy);
     free(argv1);
     exit(EXIT_FAILURE);
   }
@@ -212,6 +232,7 @@ void runCommand(char* cmd, char* envp[]) {
 
     alarm(0);
     current_child = 0;
+    free(cmd_copy);
     free(argv1);
   }
 }
